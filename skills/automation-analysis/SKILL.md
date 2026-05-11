@@ -1,6 +1,6 @@
 ---
 name: automation-analysis
-description: "End-to-end automation candidate analysis for ServiceNow Process Mining. Isolates quick-touch cases via transition filter, runs clustering and work notes analysis, and generates a ranked AI Agent recommendations report. Trigger on: "run the full analysis", "find automation candidates", "what can I automate", "end-to-end pipeline"."
+description: 'End-to-end automation candidate analysis for ServiceNow Process Mining. Isolates quick-touch cases via transition filter, runs clustering and work notes analysis, and generates a ranked AI Agent recommendations report. Trigger on: "run the full analysis", "find automation candidates", "what can I automate", "end-to-end pipeline".'
 ---
 
 # Process Mining — End-to-End Automation Analysis

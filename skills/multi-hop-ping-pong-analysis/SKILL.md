@@ -1,6 +1,6 @@
 ---
 name: multi-hop-ping-pong-analysis
-description: "Identifies multi-hop routing and ping-pong patterns in ServiceNow Process Mining. Quantifies reassignment tax, surfaces worst ping-pong group pairs, and delivers AI Agent recommendations in a Word report. Trigger on: "ping-pong analysis", "why are tickets bouncing", "reassignment tax", "routing inefficiency", "who is holding tickets longest"."
+description: 'Identifies multi-hop routing and ping-pong patterns in ServiceNow Process Mining. Quantifies reassignment tax, surfaces worst ping-pong group pairs, and delivers AI Agent recommendations in a Word report. Trigger on: "ping-pong analysis", "why are tickets bouncing", "reassignment tax", "routing inefficiency", "who is holding tickets longest".'
 ---
 
 # Multi-hop & Ping-Pong Analyzer

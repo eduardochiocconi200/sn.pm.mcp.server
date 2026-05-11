@@ -1,6 +1,6 @@
 ---
 name: reopened-cases-analysis
-description: "Analyzes why cases are being reopened in ServiceNow Process Mining. Scopes the full analysis pipeline — clustering, variant analysis, reassignment tax, work notes — to the reopened population and delivers a Word report. Trigger on: "reopened cases", "why are cases bouncing back", "Resolved to Open", "reopen analysis", "resolution failure"."
+description: 'Analyzes why cases are being reopened in ServiceNow Process Mining. Scopes the full analysis pipeline — clustering, variant analysis, reassignment tax, work notes — to the reopened population and delivers a Word report. Trigger on: "reopened cases", "why are cases bouncing back", "Resolved to Open", "reopen analysis", "resolution failure".'
 ---
 
 # Reopened Cases Analyzer

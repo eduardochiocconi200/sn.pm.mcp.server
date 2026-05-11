@@ -1,6 +1,6 @@
 ---
 name: process-miner
-description: "ServiceNow Process Mining foundation skill. Use for listing projects, triggering mines, retrieving process models, running clustering, variant analysis, and bottleneck analysis. Trigger on: "mine my project", "show me the process map", "analyze my process", "process mining"."
+description: 'ServiceNow Process Mining foundation skill. Use for listing projects, triggering mines, retrieving process models, running clustering, variant analysis, and bottleneck analysis. Trigger on: "mine my project", "show me the process map", "analyze my process", "process mining".'
 ---
 
 # ServiceNow Process Mining Analysis Skill

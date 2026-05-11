@@ -1,6 +1,6 @@
 ---
 name: slow-approvals-analysis
-description: "Identifies approval bottlenecks in ServiceNow Process Mining using a multidimensional map with a child Approval entity. Isolates slow approvals, breaks down by catalog item and approval group, and generates AI Agent recommendations. Trigger on: "slow approvals", "approval bottleneck", "why are approvals taking so long", "approval analysis"."
+description: 'Identifies approval bottlenecks in ServiceNow Process Mining using a multidimensional map with a child Approval entity. Isolates slow approvals, breaks down by catalog item and approval group, and generates AI Agent recommendations. Trigger on: "slow approvals", "approval bottleneck", "why are approvals taking so long", "approval analysis".'
 ---
 
 # Slow Approvals Analysis
