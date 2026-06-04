@@ -113,6 +113,23 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
+or if you are using the binary:
+
+```json
+{
+  "mcpServers": {
+    "servicenow-promin": {
+      "command": "/Users/user/Downloads/sn.pm.mcp.server-main/build/pm-local-mcp-server-macos-arm64",
+      "env": {
+        "SN_INSTANCE_URL": "https://yourinstance.service-now.com",
+        "SN_USERNAME": "your_username",
+        "SN_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
+
 Config file locations:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
