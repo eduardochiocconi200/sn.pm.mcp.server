@@ -7,8 +7,33 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "http";
+import { appendFileSync } from "fs";
 
 import { QueryConstantsFactory } from "./query_constants_factory.js";
+
+// ── OAuth trace logging ──────────────────────────────────────────────────────
+// Traces are written to a file rather than stdout/stderr so they never corrupt
+// the MCP stdio protocol. Set SN_OAUTH_TRACE_FILE to enable; tracing is a no-op
+// when the env var is unset.
+const TRACE_FILE = process.env.SN_TRACE_FILE ?? "";
+
+// Redact secrets so they never land in the trace file.
+function redact(value: string): string {
+  if (!value) return "<empty>";
+  if (value.length <= 8) return "****";
+  return `${value.slice(0, 4)}…${value.slice(-2)} (len=${value.length})`;
+}
+
+function trace(message: string, data?: Record<string, unknown>): void {
+  if (!TRACE_FILE) return;
+  try {
+    const ts = new Date().toISOString();
+    const suffix = data ? ` ${JSON.stringify(data)}` : "";
+    appendFileSync(TRACE_FILE, `${ts} [oauth] ${message}${suffix}\n`);
+  } catch {
+    // Never let tracing break the auth flow.
+  }
+}
 
 // ── Config from environment ──────────────────────────────────────────────────
 const INSTANCE_URL = process.env.SN_INSTANCE_URL ?? ""; // e.g. https://myinstance.service-now.com
@@ -44,10 +69,16 @@ let cachedToken: OAuthToken | null = null;
 
 // OAuth token management functions
 async function getOAuthToken(): Promise<string> {
+  trace("Getting OAuth Token");
   // Check if we have a valid cached token
   if (cachedToken && cachedToken.expires_at && Date.now() < cachedToken.expires_at) {
+    trace("cache hit, reusing token", {
+      expires_at: new Date(cachedToken.expires_at).toISOString(),
+    });
     return cachedToken.access_token;
   }
+
+  trace(cachedToken ? "cached token expired, requesting new token" : "no cached token, requesting new token");
 
   // Request new token using client credentials flow
   const tokenUrl = `${INSTANCE_URL}/${TOKEN_URL}`;
@@ -57,24 +88,52 @@ async function getOAuthToken(): Promise<string> {
     client_secret: CLIENT_SECRET,
   });
 
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
+  trace("requesting token", {
+    tokenUrl,
+    grant_type: "client_credentials",
+    client_id: redact(CLIENT_ID),
+  });
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  } catch (err) {
+    trace("token request threw", { error: String(err) });
+    throw err;
+  }
+
+  trace("token response received", {
+    status: response.status,
+    ok: response.ok,
+    elapsedMs: Date.now() - startedAt,
   });
 
   if (!response.ok) {
     const errorText = await response.text();
+    trace("token request failed", { status: response.status, body: errorText });
     throw new Error(`OAuth token request failed: HTTP ${response.status} - ${errorText}`);
   }
 
   const tokenData = (await response.json()) as OAuthToken;
-  
+
   // Cache the token with expiration time
   tokenData.expires_at = Date.now() + (tokenData.expires_in * 1000) - (60000); // Refresh 1 minute early
   cachedToken = tokenData;
+
+  trace("token cached", {
+    access_token: redact(tokenData.access_token),
+    token_type: tokenData.token_type,
+    expires_in: tokenData.expires_in,
+    expires_at: new Date(tokenData.expires_at).toISOString(),
+    has_refresh_token: Boolean(tokenData.refresh_token),
+  });
 
   return tokenData.access_token;
 }
@@ -85,9 +144,15 @@ function isOAuthConfigured(): boolean {
 
 async function getAuthHeader(): Promise<string> {
   if (isOAuthConfigured()) {
+    trace("getAuthHeader: using OAuth (Bearer)");
     const token = await getOAuthToken();
     return `Bearer ${token}`;
   } else {
+    trace("getAuthHeader: using Basic auth (OAuth not configured)", {
+      auth_type: AUTH_TYPE,
+      has_client_id: CLIENT_ID.length > 0,
+      has_client_secret: CLIENT_SECRET.length > 0,
+    });
     return "Basic " + Buffer.from(`${USERNAME}:${PASSWORD}`).toString("base64");
   }
 }
@@ -1120,14 +1185,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 async function main() {
   // Validate required environment variables based on transport type
+  trace("start main()");
   if (TRANSPORT_TYPE === "stdio") {
-    if (!INSTANCE_URL || !USERNAME || !PASSWORD) {
+    trace("Using stdio protocol.");
+    if (!INSTANCE_URL) {
       console.error(
-        "Missing required env vars for stdio transport: SN_INSTANCE_URL, SN_USERNAME, SN_PASSWORD",
+        "Missing required env var for stdio transport: SN_INSTANCE_URL",
+      );
+      process.exit(1);
+    }
+
+    // For OAuth, check OAuth credentials
+    if (isOAuthConfigured()) {
+      trace("Using OAuth authentication");
+    } else if (!USERNAME || !PASSWORD) {
+      console.error(
+        "Missing authentication credentials: Either OAuth (SN_CLIENT_ID, SN_CLIENT_SECRET) or Basic Auth (SN_USERNAME, SN_PASSWORD) required",
       );
       process.exit(1);
     }
   } else if (TRANSPORT_TYPE === "sse") {
+    trace("Using 'sse' protocol");
     if (!INSTANCE_URL) {
       console.error(
         "Missing required env var for sse transport: SN_INSTANCE_URL",
@@ -1137,7 +1215,7 @@ async function main() {
     
     // For OAuth, check OAuth credentials
     if (isOAuthConfigured()) {
-      console.log("Using OAuth authentication");
+      trace("Using OAuth authentication");
     } else if (!USERNAME || !PASSWORD) {
       console.error(
         "Missing authentication credentials: Either OAuth (SN_CLIENT_ID, SN_CLIENT_SECRET) or Basic Auth (SN_USERNAME, SN_PASSWORD) required",
@@ -1148,37 +1226,37 @@ async function main() {
 
   // Setup transport based on type
   if (TRANSPORT_TYPE === "sse") {
-    console.log(`Starting MCP server with SSE transport on ${HOST}:${PORT}`);
+    trace("Using OAuth authentication. Starting MCP server with SSE transport on ${HOST}:${PORT}");
     const httpServer = setupSSETransport(server);
     
     httpServer.listen(PORT, HOST, () => {
-      console.error(`ServiceNow Process Mining MCP server running on http://${HOST}:${PORT}`);
-      console.log(`SSE endpoint available at: http://${HOST}:${PORT}/mcp/sse`);
+      trace("ServiceNow Process Mining MCP server running on http://${HOST}:${PORT}");
+      trace("SSE endpoint available at: http://${HOST}:${PORT}/mcp/sse");
     });
     
     // Handle graceful shutdown
     process.on("SIGTERM", () => {
-      console.log("Received SIGTERM, shutting down gracefully");
+      trace("Received SIGTERM, shutting down gracefully");
       httpServer.close(() => {
-        console.log("HTTP server closed");
+        trace("HTTP server closed");
         process.exit(0);
       });
     });
     
     process.on("SIGINT", () => {
-      console.log("Received SIGINT, shutting down gracefully");
+      trace("Received SIGINT, shutting down gracefully");
       httpServer.close(() => {
-        console.log("HTTP server closed");
+        trace("HTTP server closed");
         process.exit(0);
       });
     });
     
   } else {
     // Default stdio transport
-    // console.log("Starting MCP server with stdio transport");
+    trace("Starting MCP server with stdio transport");
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    // console.error("ServiceNow Process Mining MCP server running");
+    trace("ServiceNow Process Mining MCP server running");
   }
 }
 
