@@ -1,6 +1,24 @@
 ---
 name: multi-hop-ping-pong-analysis
-description: 'Identifies multi-hop routing and ping-pong patterns in ServiceNow Process Mining. Quantifies reassignment tax, surfaces worst ping-pong group pairs, and delivers AI Agent recommendations in a Word report. Trigger on: "ping-pong analysis", "why are tickets bouncing", "reassignment tax", "routing inefficiency", "who is holding tickets longest".'
+version: 2.0.0
+updated: 2026-06-23
+description: 'Identifies multi-hop routing and ping-pong patterns in ServiceNow Process Mining. Quantifies reassignment tax, surfaces worst ping-pong group pairs, and delivers AI Agent recommendations in a Word report. After report delivery, offers four optional outputs: branded PowerPoint deck, interactive HTML dashboard, EPIC & User Story implementation plan (Word), and Automation Request creation in ServiceNow. Trigger on: "ping-pong analysis", "why are tickets bouncing", "reassignment tax", "routing inefficiency", "who is holding tickets longest".'
+dependencies:
+  - /mnt/skills/user/process-miner/SKILL.md
+  - /mnt/skills/public/docx/SKILL.md
+  - /mnt/skills/user/smart-brevity-docx/SKILL.md
+  - /mnt/skills/user/process-mining-dashboard/SKILL.md (optional — for Phase 7 PowerPoint/HTML outputs)
+changelog:
+  - version: 2.0.0
+    date: 2026-06-23
+    changes:
+      - Added Phase 7 Post-Report Delivery Options (PowerPoint, HTML Dashboard, EPIC/Story Plan, Automation Requests)
+      - Added EPIC structure tailored to routing patterns (Triaging Agent, Routing Rules, Auto-Prompting, Escalation, Dwell Time SLAs, Measurement)
+      - Automation Request field mapping from Phase 5 IMPACT framework
+  - version: 1.0.0
+    date: 2026-01-01
+    changes:
+      - Initial release
 ---
 
 # Multi-hop & Ping-Pong Analyzer
@@ -378,6 +396,67 @@ Sum projected savings:
 11. **Next steps** — 5–6 specific numbered actions for the team.
 
 **Voice:** Business-friendly. Lead with the story, back with numbers. Use "Triaging" not "Smart routing" for the AI Agent that routes cases at creation.
+
+---
+
+## Phase 7: Post-Report Delivery Options
+
+After the Word report has been presented to the user, Claude MUST ask the following four questions before ending the conversation. Ask them all at once in a single message — do not split into separate prompts. Frame them as next-step options the user can mix and match.
+
+### Step 7.1 — Offer the four post-report deliverables
+
+**Option 1 — PowerPoint Executive Deck**
+Ask: "Would you like a branded PowerPoint deck built from this report? It would cover the worst ping-pong pairs, dwell time analysis, root causes, and routing improvement recommendations — ready to present to leadership or a customer."
+- If yes: invoke the `process-mining-dashboard` skill's PPTX generation mode, passing all findings from Phases 2–6 as input context.
+
+**Option 2 — Interactive HTML Dashboard**
+Ask: "Would you like an interactive HTML dashboard summarizing the findings? It includes tabbed views for Key Findings, Ping-Pong Pair Analysis, Root Causes, AI Agent Recommendations, and Impact Roadmap — built for sharing with stakeholders who prefer a browser-based view."
+- If yes: invoke the `process-mining-dashboard` skill's HTML dashboard generation mode, passing all findings from Phases 2–6 as input context.
+
+**Option 3 — EPIC & User Story Implementation Plan (Word)**
+Ask: "Would you like a Word document that turns the recommendations into an EPIC and User Story implementation plan? Each recommendation area (routing fixes, AI Agents, process redesign) becomes an EPIC with individual stories — sized, sequenced, and acceptance-criteria ready."
+- If yes: generate a Word document using the `docx` skill with the following structure:
+
+  **Document structure:**
+  - **Title**: Implementation Plan — Multi-Hop & Ping-Pong Reduction: [Project Name]
+  - **Introduction**: 1 paragraph summarizing the routing problem and goal of this plan
+  - **EPIC summary table**: EPIC name | Layer | # Stories | Estimated Weeks | Priority | Owner (placeholder)
+  - **For each EPIC** (one H1 section per EPIC):
+    - EPIC name and one-sentence goal
+    - Acceptance criteria for the EPIC (what "done" looks like at the EPIC level)
+    - A table of User Stories with columns: Story ID | Title | As a... | I want to... | So that... | Acceptance Criteria | Story Points (estimate) | Dependencies
+  - **EPICs to generate** (derive from Phase 5 recommendations; always include these as a minimum):
+    - EPIC 1: AI-Powered Triaging Agent (eliminates miscategorization-driven transfers at creation)
+    - EPIC 2: Routing Rule Cleanup & Assignment Logic (eliminates structural routing failures for top ping-pong pairs)
+    - EPIC 3: Missing-Information Auto-Prompting (prevents bounces caused by incomplete intake)
+    - EPIC 4: Escalation Path Formalization (resolves unclear ownership patterns)
+    - EPIC 5: Dwell Time SLAs & Accountability (adds time-bound transfer rules for top dwell-time groups)
+    - EPIC 6: Measurement & Continuous Improvement (30-day re-mine cadence, FCR/transfer-rate KPI dashboards)
+  - Add or merge EPICs if Phase 5 IMPACT analysis identified additional specific automation opportunities.
+  - **Implementation Roadmap table** at the end: Week range | EPIC | Key Milestones | Dependencies
+
+**Option 4 — Create Automation Requests in ServiceNow**
+Ask: "Would you like to create each AI Agent recommendation as an Automation Request record in ServiceNow? This registers each agent (Triaging Agent, routing rules, auto-prompting, etc.) as a formal request in the instance so the team can track and prioritize them."
+- If yes:
+  - For each AI Agent identified in Phase 5 (Step 5.2), call `create_automation_request` with the following field mapping:
+    - `name`: Agent name
+    - `description`: The "What It Does / Propose" text from the IMPACT analysis
+    - `trigger`: The trigger condition (e.g., "At ticket creation", "On transfer to group X")
+    - `priority`: Map Quick win → High, Medium → Medium, Strategic → Low
+    - `estimated_effort_weeks`: The timeline estimate from Step 5.2
+    - `project_version_id`: The `versionId` from Phase 0
+  - After all records are created, display a confirmation table: Agent Name | Record SysID | Priority | Link
+  - If `create_automation_request` returns an error for a record, report it and continue — do not abort the batch.
+
+### Step 7.2 — Execution order when multiple options are selected
+
+If the user selects multiple options, execute in this order:
+1. EPIC & User Story Plan (Word) — produces structured content that can inform the deck
+2. Automation Requests — fire-and-forget API calls, can run in parallel with document generation
+3. PowerPoint Deck — uses report + story plan context
+4. HTML Dashboard — uses report context; generate last
+
+If the user selects all four, confirm before starting: "I'll generate the Story Plan, create the Automation Requests, then build the PowerPoint deck and HTML dashboard. This may take a few minutes — shall I proceed?"
 
 ---
 

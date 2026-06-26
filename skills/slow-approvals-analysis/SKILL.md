@@ -5,46 +5,48 @@ description: 'Identifies approval bottlenecks in ServiceNow Process Mining using
 
 # Slow Approvals Analysis
 
-Identifies approval bottlenecks in ServiceNow Process Mining projects using the Approval child entity (`sysapproval_approver`) and transition filters.
+Identifies approval bottlenecks in ServiceNow Process Mining projects using the Approval child entity
+(`sysapproval_approver`) and transition filters.
 
 ---
 
-## ⛔ MANDATORY PRE-FLIGHT — READ BEFORE ANY TOOL CALLS
-Before executing **any phase** of this skill, Claude MUST call the `view` tool on all three dependency skills in this order:
+## ⛔ MANDATORY PRE-FLIGHT
 
-1. `/mnt/skills/user/process-miner/SKILL.md` — **required for filterSets payload shapes**. The transition filter payload (Zurich `advancedTransitions` / Australia `transitionChains`) is documented there with working examples. Do NOT attempt to construct a `create_transition_filter` payload from memory.
-2. `/mnt/skills/public/docx/SKILL.md` — required before writing any report generation code.
-3. `/mnt/skills/user/smart-brevity-docx/SKILL.md` — required before writing any report generation code.
+Before executing any step of this skill, Claude MUST read these three dependency skills in order:
 
-**Do NOT proceed to Phase 1 until all three skills have been read in this session.**
+1. `/mnt/skills/user/process-miner/SKILL.md` — **required for filterSets payload shapes**
+2. `/mnt/skills/public/docx/SKILL.md` — required before writing any report code
+3. `/mnt/skills/user/smart-brevity-docx/SKILL.md` — required before writing any report code
 
-This is not optional. Skipping this step and relying on memory for payload shapes is the most common cause of `create_transition_filter` failures.
+**Do NOT proceed to Step 1 until all three have been read in this session.**
 
 ---
 
-## Phase 0: Project Discovery & Validation
+## Step 1 — Verify Multidimensional Map Configuration
 
-Before running any analysis, verify the project has the required multidimensional map by calling `get_project_details` and checking `projectDefinition.projectEntities`.
+Call `get_project_details` with `filterSets: {}` and check `projectDefinition.projectEntities`.
 
 **Required entities:**
 1. Root entity (e.g. `sc_req_item`) with an `approval` activity field
 2. Child entity named **"Approval"** — table `sysapproval_approver`, activity field `state`
 
-If the Approval child entity is absent, stop and surface this message:
+If the Approval child entity is absent, stop and surface:
 
-> "This project does not have an Approval child entity configured. The slow-approvals analysis requires a multidimensional map with `sysapproval_approver` as a child entity. Please ask your Process Mining admin to add the Approval entity to the project configuration."
+> "This project does not have an Approval child entity configured. The slow-approvals analysis
+> requires a multidimensional map with `sysapproval_approver` as a child entity. Please ask your
+> Process Mining admin to add the Approval entity to the project configuration."
 
-**Key IDs to extract:**
+**Extract and store:**
 
-| Entity | ID field | Store as |
+| Entity | Field | Store as |
 |---|---|---|
 | Root entity | `entityId` | `ROOT_ENTITY_ID` |
 | Approval entity | `entityId` | `APPROVAL_ENTITY_ID` |
-| versionId | `version.id` | `VERSION_ID` |
+| Version | `version.id` | `VERSION_ID` |
 
 ---
 
-## Phase 1: Baseline approval stats
+## Step 2 — Pull Baseline Approval Statistics
 
 Call `get_project_details` with no filterSets (`{}`).
 
@@ -53,9 +55,10 @@ Call `get_project_details` with no filterSets (`{}`).
 - `avgCaseDuration`, `medianDuration` — compute mean/median gap ratio
 - `minCaseDuration`, `maxCaseDuration`
 
-**Key signal:** A mean/median gap > 5× is a strong bottleneck indicator. The ProjectA Requested Item project showed a 16.9× gap (6.3d avg vs 0.4d median).
+**Key signal:** A mean/median gap > 5× is a strong bottleneck indicator. The Requested Item project
+showed a 16.9× gap (6.3d avg vs 0.4d median).
 
-**From edges, find these key approval transitions:**
+**From edges, find key approval transitions:**
 - Approval Requested → Approved (primary bottleneck edge)
 - Approval Requested → Rejected (hidden cost — check total duration)
 - Approval Requested → No Longer Required (abandoned approvals = masked demand)
@@ -66,9 +69,10 @@ Call `get_project_details` with no filterSets (`{}`).
 
 ---
 
-## Phase 2: Transition filter (canonical filterSet)
+## Step 3 — Apply Slow-Approval Transition Filter
 
-Use `get_project_details` (NOT `create_transition_filter` — see Known Bugs) with the following filterSet:
+Use `get_project_details` with the following filterSet (do NOT use `create_transition_filter` — see
+Known Bugs):
 
 ```json
 {
@@ -78,28 +82,20 @@ Use `get_project_details` (NOT `create_transition_filter` — see Known Bugs) wi
       "advancedTransitions": [
         {
           "entityId": "<ROOT_ENTITY_ID>",
-          "field": "approval",
-          "predicate": "EQ",
-          "occurrence": "ALWAYS",
-          "relation": "FOLLOWED_BY",
-          "context": null,
-          "values": ["requested"]
+          "field": "approval", "predicate": "EQ",
+          "occurrence": "ALWAYS", "relation": "FOLLOWED_BY",
+          "context": null, "values": ["requested"]
         },
         {
           "entityId": "<ROOT_ENTITY_ID>",
-          "field": "approval",
-          "predicate": "EQ",
-          "occurrence": "ALWAYS",
-          "relation": "FOLLOWED_BY",
-          "context": null,
-          "values": ["approved"]
+          "field": "approval", "predicate": "EQ",
+          "occurrence": "ALWAYS", "relation": "FOLLOWED_BY",
+          "context": null, "values": ["approved"]
         }
       ],
       "transitionConstraints": [{
-        "fromIndex": 0,
-        "toIndex": 1,
-        "minDuration": 86400,
-        "maxDuration": 90000000,
+        "fromIndex": 0, "toIndex": 1,
+        "minDuration": 86400, "maxDuration": 90000000,
         "fieldConstraint": { "type": "NONE", "field": "" }
       }]
     }]
@@ -108,35 +104,45 @@ Use `get_project_details` (NOT `create_transition_filter` — see Known Bugs) wi
 ```
 
 **Critical notes:**
-- `occurrence: "ALWAYS"` captures every approval cycle on a case, including re-approvals. This is the canonical value — `"ALL"` and `"ANY"` are invalid on most instances.
-- `fieldConstraint: {"type": "NONE", "field": ""}` is **mandatory** — omitting it causes a null pointer crash on the ServiceNow side.
+- `occurrence: "ALWAYS"` captures every approval cycle including re-approvals. `"ALL"` and `"ANY"`
+  are invalid on most instances.
+- `fieldConstraint: {"type": "NONE", "field": ""}` is **mandatory** — omitting it causes a null
+  pointer crash.
 - `minDuration: 86400` = 1 day. `maxDuration: 90000000` ≈ 1,041 days.
-- If the response `__typename` is `GlidePromin_ScheduledTask`, the computation is running async. Poll with the same filterSets until `__typename` switches to `GlidePromin_Model`.
-
-**Check filtered population size before clustering:**
-From the filtered result, check the Approval entity aggregate `caseCount`. If < 100, do NOT call `cluster_node` — clustering requires a minimum of 100 records. Surface this message:
-
-> "The slow-approval population contains [N] approval records — clustering requires a minimum of 100 records. The dataset is too small to perform cluster analysis at this threshold. Consider widening the filter (lower the minDuration or extend the project date range) before clustering."
+- If the response is `GlidePromin_ScheduledTask`, re-call with identical parameters after 60–120
+  seconds until `GlidePromin_Model` is returned.
 
 **From the filtered result, extract:**
 - RITM case count and variant count
-- Approval records count (`maxReps` > 1 means some RITMs cycled through approval multiple times)
-- Avg/median approval wait on Requested→Approved edge
+- Approval records count (`maxReps` > 1 means some cases cycled through approval multiple times)
+- Avg/median approval wait on the Requested→Approved edge
 - Total hours consumed
 - No Longer Required count (requesters giving up)
 - Catalog item breakdown (top slow items by avg duration and volume)
-- Approval group breakdown (`group.assignment_group` — look for unrouted cases with no group)
+- Approval group breakdown — look for unrouted cases with no group
 
 ---
 
-## Phase 3: Cluster analysis
+## Step 4 — Population Size Check Before Clustering
 
-**Important:** Clustering is only supported on the **root entity** — NOT the Approval child entity. Attempting to cluster using an Approval entity node key will return: `"There is no process configuration for sysapproval_approver table."` Use the `approval` field node on the root entity instead.
+Check the Approval entity aggregate `caseCount` from Step 3. If < 100, skip Step 5 and note:
+
+> "The slow-approval population contains [N] approval records — clustering requires a minimum of
+> 100 records. Consider widening the filter (lower minDuration or extend the date range) before
+> running cluster analysis."
+
+---
+
+## Step 5 — Cluster Analysis on Root Entity *(skip if < 100 cases)*
+
+**Important:** Clustering is only supported on the **root entity** — NOT the Approval child entity.
+Using an Approval entity node key returns: `"There is no process configuration for
+sysapproval_approver table."`
 
 **Get the correct elementId:**
-- From the base (unfiltered) `get_project_details` result
-- Find the node where `entityId == ROOT_ENTITY_ID` and `field == "approval"` and `value == "requested"`
-- Use the node's `key` field as the `elementId` (NOT `nodeStatsId`)
+- From the **unfiltered** `get_project_details` result
+- Find the node where `entityId == ROOT_ENTITY_ID`, `field == "approval"`, `value == "requested"`
+- Use that node's `key` field as `elementId` (NOT `nodeStatsId`)
 
 **Call `cluster_node`:**
 ```json
@@ -150,25 +156,31 @@ From the filtered result, check the Approval entity aggregate `caseCount`. If < 
 }
 ```
 
-**`forceSubmit: true` is required** on the first call — without it, some instances return an error even when a process configuration exists. Poll with `forceSubmit: false` until `__typename` is `GlidePromin_ClusteringResult`.
+`forceSubmit: true` is required on first call. Poll with `forceSubmit: false` until
+`GlidePromin_ClusteringResult` is returned.
 
 **Interpret clusters — look for:**
-- Clusters with slow-approval catalog items that show **"(no group)"** at 100% purity — this is the structural root cause (no approval group configured on the catalog item)
-- High-volume clusters with known assignment groups that appear in the slow-approval population — SLA accountability issue
-- Clusters linking to high-duration assignment groups (e.g., Client Management Team patterns with abnormal open-state durations)
+- Clusters with `"(no group)"` at 100% purity — confirms no approval group configured on the
+  catalog item (structural root cause)
+- High-volume clusters with known assignment groups in the slow-approval population (SLA
+  accountability issue)
+- Clusters linking to high-duration assignment groups
 
 ---
 
-## Phase 4: Recommendations (IMPACT framework)
+## Step 6 — Build Recommendations (IMPACT Framework)
 
-For each identified issue, structure recommendations as:
+For each identified issue:
 
-- **Identify** — What catalog items / approval groups are affected?
+- **Identify** — Which catalog items / approval groups are affected?
 - **Measure** — Total hours consumed, number of cases, avg wait in days
-- **Propose** — Specific action (e.g., configure approval group on catalog item, add SLA, set up escalation)
+- **Propose** — Specific action (e.g., configure approval group on catalog item, add SLA, set up
+  escalation)
 - **Automate** — Can an AI Agent auto-approve based on rules? Can approval reminders be automated?
-- **Compare** — Expected improvement (e.g., "removing individual approver routing for Smartsheet could reduce avg wait from 22d to <5d based on managed-group benchmarks in this project")
-- **Timeline** — Quick win (catalog config change, ~1 day) vs. strategic (new approval workflow, ~1 sprint)
+- **Compare** — Expected improvement (e.g., removing individual approver routing for Smartsheet
+  could reduce avg wait from 22d to <5d based on managed-group benchmarks)
+- **Timeline** — Quick win (catalog config change, ~1 day) vs. strategic (new approval workflow,
+  ~1 sprint)
 
 **Priority ranking:**
 1. Catalog items with no approval group (zero routing = no SLA accountability)
@@ -179,39 +191,49 @@ For each identified issue, structure recommendations as:
 
 ---
 
+## Step 7 — Generate Word Report
+
+Read `docx` and `smart-brevity-docx` skills before writing code.
+
+**Report structure (all sections required):**
+
+1. Title — headline with the key number (e.g., "63% of Approvals Have No Owner — Here's What
+   That's Costing")
+2. Executive summary — top 3 AI Agent recommendations + projected savings. 60-second read.
+3. Baseline approval stats — mean/median gap ratio, total approval records, state distribution
+4. Slow-approval population — filtered case count, avg/median wait, total hours, No Longer Required
+5. Root cause by catalog item — top slow items ranked by avg duration and volume
+6. Approval group analysis — which groups are slowest; which items have no group
+7. Clustering findings — from Step 5, or skip note if population < 100
+8. AI Agent recommendations — implementation table with agent name, trigger, action, cases/month,
+   hours saved, priority, timeline
+9. Next steps — 5–6 numbered actions
+
+---
+
 ## Known Bugs & Workarounds
 
 | Bug | Symptom | Workaround |
 |---|---|---|
-| `create_transition_filter` EOF at col 12,554 | `Invalid syntax with offending token '<EOF>'` | Use `get_project_details` with `filterSets` parameter instead. *(Observed on the ProjectA Zurich instance — verify on other instances before assuming this applies universally.)* |
+| `create_transition_filter` EOF at col 12,554 | `Invalid syntax with offending token '<EOF>'` | Use `get_project_details` with `filterSets` parameter instead |
 | `cluster_node` without `forceSubmit` | `"no process configuration"` error | Always pass `forceSubmit: true` on first call |
-| Clustering on child entity | `"There is no process configuration for sysapproval_approver"` | Use root entity approval field node key, not child entity node |
-| `fieldConstraint` null pointer | `"Cannot invoke getFieldConstraint().getType()"` | Always include `fieldConstraint: {"type": "NONE", "field": ""}` in transitionConstraints |
-| Async transition mining | Response is `GlidePromin_ScheduledTask` instead of `GlidePromin_Model` | Poll `get_project_details` with same filterSets until typename flips |
+| Clustering on child entity | `"There is no process configuration for sysapproval_approver"` | Use root entity approval field node key |
+| `fieldConstraint` null pointer | `"Cannot invoke getFieldConstraint().getType()"` | Always include `fieldConstraint: {"type": "NONE", "field": ""}` |
+| Async response | `GlidePromin_ScheduledTask` instead of `GlidePromin_Model` | Re-call same tool after 60–120 seconds |
 
 ---
 
-## Confirmed Valid Enum Values
-
-These were validated on the ProjectA instance (ServiceNow Zurich release range). Verify on new instances — values may differ across releases.
-
-**`GlidePromin_AdvTransitionPredicate`:** `EQ`, `IN`
+## Valid Enum Values (Validated on Zurich)
 
 **`GlidePromin_AdvTransitionOccurrence`:** `FIRST`, `LAST`, `ALWAYS`
-- `ALL` and `ANY` are **invalid** despite appearing in some documentation
-
-**`GlidePromin_AdvTransitionRelation`:** `FOLLOWED_BY`, `EVENTUALLY_FOLLOWED_BY`
+— `ALL` and `ANY` are **invalid** despite appearing in some documentation
 
 **`GlidePromin_TransitionConstraintType`:** `NONE`
-- `DURATION`, `TIME`, `ACTIVITY`, `FIELD` are **invalid** on this release
-
-**`GlidePromin_OrderedFilterType`:** `TRANSITION`, `VARIANT`
+— `DURATION`, `TIME`, `ACTIVITY`, `FIELD` are **invalid** on this release
 
 ---
 
-## Reference: Requested Item project
-
-This skill was developed and validated against the following project. Use as a reference baseline when onboarding to similar projects.
+## Reference: Requested Item Project
 
 | Field | Value |
 |---|---|
@@ -220,26 +242,8 @@ This skill was developed and validated against the following project. Use as a r
 | versionId (as of 2026-04-19) | `fec5d956ff544710a0c2f18afc4fd969` |
 | Root entity | `sc_req_item` — entityId `00d390813b1c431036fa2464c3e45a61` |
 | Approval entity | `sysapproval_approver` — entityId `1f751156ff544710a0c2f18afc4fd9ce` |
-| Task SLA entity | `task_sla` — entityId `2f751156ff544710a0c2f18afc4fd9fd` |
-| approval=Requested node key | `ade8724b9e0bf9f9768d6c4e6ded6bba` (root entity) |
+| approval=Requested node key | `ade8724b9e0bf9f9768d6c4e6ded6bba` |
 | Total RITMs | 7,454 · avg 18.7d · median 3.6d |
 | Baseline approval mean/median gap | 16.9× (6.3d avg vs 0.4d median) |
-| Canonical filter result | 57 RITMs · 88 approval records · avg 23.8d |
-| Root cause confirmed | 63/88 approvals (72%) have no approval group — individual routing |
-
-**Top slow-approval items (from ALWAYS >1d filter):**
-
-| Item | Cases | Avg wait | Priority |
-|---|---|---|---|
-| Adobe Systems | 1 | 146.5d | Critical |
-| CaptureIT | 1 | 53.7d | Critical |
-| Task Mining | 1 | 47.0d | Critical |
-| ERP Access | 2 | 43.7d | Critical |
-| ERP Cloud | 3 | 27.3d | High |
-| Smartsheet | 11 | 22.0d | High (highest volume) |
-| Microsoft Outlook | 4 | 16.8d | High |
-| Windsurf | 3 | 8.1d | Medium |
-| Catalog Access Item | 11 | 3.4d | Medium (highest volume) |
-
-**Clustering insight (cluster #11, Smartsheet, 56 cases, 100% quality):**
-No assignment group at 100% purity — confirmed zero routing on this catalog item. Same pattern for Teams (#30) and Visual Studio (#26). All three require approval group configuration in the catalog item definition.
+| Filtered result | 57 RITMs · 88 approval records · avg 23.8d |
+| Root cause confirmed | 63/88 approvals (72%) have no approval group |
