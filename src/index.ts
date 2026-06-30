@@ -837,7 +837,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mine_project":
         data = await graphql(queryConstants.QUERY_MINE_PROJECT, {
-          projectId: args.projectId,
+          sysId: args.projectId,
           preview: args.preview,
         });
         break;
